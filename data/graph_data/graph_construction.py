@@ -563,6 +563,10 @@ def amazon_graph_random_drop_v3(sample=True, sample_num_nodes=1000, homo_drop_ra
     g.ndata['test_mask'] = graph.ndata['test_mask']
     return g
 
+
+def amazon_temporal_graph():
+    graph = dataset[0]
+
 #
 # dgl.save_graphs('./amazon/org_graph.dgl', original_graph)
 # dgl.save_graphs('./amazon/edknn_graph.dgl', euclidean_dis_knn())
