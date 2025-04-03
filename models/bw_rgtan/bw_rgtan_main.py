@@ -1,23 +1,15 @@
-import dgl
-import torch
-import torch.nn.functional as F
-import numpy as np
-import argparse
-import time
-from sklearn.metrics import f1_score, recall_score, precision_score, roc_auc_score
-from sklearn.model_selection import train_test_split
-from bwgnn_models import BWGNN, BWGNN_Hetero
-from bwgnn_dataset import Dataset
-from dgl.dataloading import DataLoader
+import bw_rgtan_model
 
 
-def train(model, g, args):
-    features = g.ndata['feature']
-    labels = g.ndata['label']
+def train(graph, args):
+    device = args.['device']
+    graph = graph.to(device)
+
+    feature = graph.ndata['feature']
+    labels = graph.ndata['label']
 
     index = list(range(len(labels)))
 
-    # train/test/validation split
     idx_train, idx_rest, y_train, y_rest = train_test_split(index, labels[index], stratify=labels[index],
                                                             train_size=args.train_ratio,
                                                             random_state=2, shuffle=True)
@@ -25,6 +17,7 @@ def train(model, g, args):
                                                             test_size=0.67,
                                                             random_state=2, shuffle=True)
     
+
     train_mask = torch.zeros([len(labels)]).bool()
     val_mask = torch.zeros([len(labels)]).bool()
     test_mask = torch.zeros([len(labels)]).bool()
@@ -32,11 +25,15 @@ def train(model, g, args):
     train_mask[idx_train] = 1
     val_mask[idx_valid] = 1
     test_mask[idx_test] = 1
-    print('train/dev/test samples: ', train_mask.sum().item(), val_mask.sum().item(), test_mask.sum().item())
 
-    # Prepare the graph for mini-batch
+
     sampler = dgl.dataloading.MultiLayerFullNeighborSampler(2)  # 2 layers for GNN
-    dataloader = DataLoader(g, torch.where(train_mask)[0].tolist(), sampler, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    dataloader = DataLoader(g, torch.where(train_mask)[0].tolist(), sampler, device=device, batch_size=args.batch_size, shuffle=True, num_workers=0)
+
+
+
+    model = bw_rgtan_model(in_feats=in_feats, hidden_dim=h_feats, num_classes=num_classes, heads=[4]*args['n_layers'], activation=nn.PReLU(), graph=graph, d=order, batch=True,  n_layers=args['n_layers'], drop=args['dropout'], device=device, gated=args['gated'], ref_df=feat_df, cat_features=cat_feat, neigh_features=nei_feat, nei_att_head=nei_att_head).to(device)
+
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     best_f1, final_tf1, final_trec, final_tpre, final_tmf1, final_tauc = 0., 0., 0., 0., 0., 0.
@@ -48,9 +45,7 @@ def train(model, g, args):
 
     for e in range(args.epoch):
         model.train()
-
         for input_nodes, output_nodes, mfg in dataloader:
-            # Prepare input features and labels for the mini-batch
             batch_features = mfg.ndata['feature']
             batch_labels = labels[output_nodes]
 
@@ -63,53 +58,17 @@ def train(model, g, args):
             loss = F.cross_entropy(logits, batch_labels, weight=torch.tensor([1., weight]))
             loss.backward()
             optimizer.step()
-
-        model.eval()
-
-        # After training, evaluate on validation set
-        probs = logits.softmax(1)
-        f1, thres = get_best_f1(labels[val_mask], probs[val_mask])
-        preds = np.zeros_like(labels)
-        preds[probs[:, 1] > thres] = 1
-
-        trec = recall_score(labels[test_mask], preds[test_mask])
-        tpre = precision_score(labels[test_mask], preds[test_mask])
-        tmf1 = f1_score(labels[test_mask], preds[test_mask], average='macro')
-        tauc = roc_auc_score(labels[test_mask], probs[test_mask][:, 1].detach().numpy())
-
-        if best_f1 < f1:
-            best_f1 = f1
-            final_trec = trec
-            final_tpre = tpre
-            final_tmf1 = tmf1
-            final_tauc = tauc
-            best_model = model.state_dict()
-
-        print('Epoch {}, loss: {:.4f}, val mf1: {:.4f}, (best {:.4f})'.format(e, loss.item(), f1, best_f1))
-
-    time_end = time.time()
-    print('time cost: ', time_end - time_start, 's')
-    print('Test: REC {:.2f} PRE {:.2f} MF1 {:.2f} AUC {:.2f}'.format(final_trec*100,
-                                                                     final_tpre*100, final_tmf1*100, final_tauc*100))
-
-    return final_tmf1, final_tauc
+    model.eval()
 
 
-# threshold adjusting for best macro f1
-def get_best_f1(labels, probs):
-    best_f1, best_thre = 0, 0
-    for thres in np.linspace(0.05, 0.95, 19):
-        preds = np.zeros_like(labels)
-        preds[probs[:, 1] > thres] = 1
-        mf1 = f1_score(labels, preds, average='macro')
-        if mf1 > best_f1:
-            best_f1 = mf1
-            best_thre = thres
-    return best_f1, best_thre
+
+
+
+
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='BWGNN')
+    parser = argparse.ArgumentParser(description='BW_RGTAN')
     parser.add_argument("--dataset", type=str, default="amazon",
                         help="Dataset for this model (yelp/amazon/tfinance/tsocial)")
     parser.add_argument("--train_ratio", type=float, default=0.01, help="Training ratio")
@@ -130,12 +89,12 @@ if __name__ == '__main__':
     in_feats = graph.ndata['feature'].shape[1]
     num_classes = 2
 
+
+
     if args.run == 1:
-        if homo:
-            model = BWGNN(in_feats, h_feats, num_classes, graph, d=order)
-        else:
-            model = BWGNN_Hetero(in_feats, h_feats, num_classes, graph, d=order)
-        train(model, graph, args)
+        train(graph, args)
+
+
 
     else:
         final_mf1s, final_aucs = [], []

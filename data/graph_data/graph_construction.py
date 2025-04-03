@@ -564,8 +564,26 @@ def amazon_graph_random_drop_v3(sample=True, sample_num_nodes=1000, homo_drop_ra
     return g
 
 
-def amazon_temporal_graph():
-    graph = dataset[0]
+def rgtan_graph(dataset_name:str, test_size: float, homo=True):
+    cat_features = []
+    if dataset_name == 'amazon':
+        graph = dataset[0]
+        if homo:
+            graph = dgl.to_homogeneous(dataset[0], ndata=['feature', 'label', 'train_mask', 'val_mask', 'test_mask'])
+    
+    feat_data = graph.ndata['feature']
+    labels = graph.ndata['labels']
+
+    index = list(range(3305, len(labels)))
+    train_idx, test_idx, y_train, y_test = train_test_split(index, labels[3305:], stratify=labels[3305:],
+                                                            test_size=test_size, random_state=2, shuffle=True)
+
+
+    return feat_data, labels, train_idx, test_idx, graph, cat_features
+    
+
+
+
 
 #
 # dgl.save_graphs('./amazon/org_graph.dgl', original_graph)

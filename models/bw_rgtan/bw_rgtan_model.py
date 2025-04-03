@@ -8,6 +8,9 @@ class bw_rgtan_model(nn.Module):
                  n_classes,
                  heads,
                  activation,
+                 graph,
+                 d=2,
+                 batch=True,
                  skip_feat=True,
                  gated=True,
                  layer_norm=True,
@@ -18,8 +21,8 @@ class bw_rgtan_model(nn.Module):
                  cat_features=None,
                  neigh_features=None,
                  nei_att_head=4,
-                 device='cpu'):
-        super(bw_rgtan_model, self).__init__()
+                 device='cpu',):
+        # rgtan initialization
         self.in_feats = in_feats  # feature dimension
         self.hidden_dim = hidden_dim  # 64
         self.n_layers = n_layers
@@ -77,21 +80,33 @@ class bw_rgtan_model(nn.Module):
                                                  self.hidden_dim * self.heads[-1]),
                                              nn.PReLU(),
                                              nn.Dropout(self.drop),
-                                             nn.Linear(self.hidden_dim * self.heads[-1], self.n_classes)))
+                                             nn.Linear(self.hidden_dim * self.heads[-1], self.hidden_dim)))
         else:
             self.layers.append(nn.Linear(self.hidden_dim *
                                self.heads[-1], self.n_classes))
-            
-            
 
-    def forward(self, blocks, features, labels, n2v_feat=None, neighstat_feat=None):
-        """
-        :param blocks: train blocks
-        :param features: train features
-        :param labels: train labels
-        :param n2v_feat: whether to use n2v features
-        :param neighstat_feat: neighbor riskstat features
-        """
+
+        # bwgnn inizialization
+        self.g = graph
+        self.thetas = calculate_theta2(d=d)
+        self.conv = []
+        for i in range(len(self.thetas)):
+            if not batch:
+                self.conv.append(PolyConv(h_feats, h_feats, self.thetas[i], lin=False))
+            else:
+                self.conv.append(PolyConvBatch(h_feats, h_feats, self.thetas[i], lin=False))
+        self.linear = nn.Linear(in_feats, h_feats)
+        self.linear2 = nn.Linear(h_feats, h_feats)
+        self.linear3 = nn.Linear(h_feats*len(self.conv), h_feats)
+        self.linear4 = nn.Linear(h_feats, h_feats)
+        self.act = nn.ReLU()
+        self.d = d
+
+        # aggeragation initialization
+        self.agg_layer = nn.Linear(self.hidden_dim, num_class)
+
+    def forward():
+        # rgtan
         if n2v_feat is None and neighstat_feat is None:
             h = features
         else:
@@ -110,6 +125,44 @@ class bw_rgtan_model(nn.Module):
         for l in range(self.n_layers):
             h = self.output_drop(self.layers[l+4](blocks[l], h))
 
+        # rgtan output
         logits = self.layers[-1](h)
+        rgtan_output = logits
 
-        return logits
+
+
+        # bwgnn
+        h = self.linear(in_feat)
+        h = self.act(h)
+        h = self.linear2(h)
+        h = self.act(h)
+        h_all = []
+
+        for relation in self.g.canonical_etypes:
+            # print(relation)
+            h_final = torch.zeros([len(in_feat), 0])
+            for conv in self.conv:
+                h0 = conv(self.g[relation], h)
+                h_final = torch.cat([h_final, h0], -1)
+                # print(h_final.shape)
+            h = self.linear3(h_final)
+            h_all.append(h)
+
+        h_all = torch.stack(h_all).sum(0)
+        h_all = self.act(h_all)
+
+        # bwgnn output
+        h_all = self.linear4(h_all)
+        bwgnn_output = h_all
+
+
+
+        # aggeragation
+        final_h = rgtan_output + bwgnn_output
+
+        output = self.agg_layer(final_h)
+
+        return output
+
+
+
