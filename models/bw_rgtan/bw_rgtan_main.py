@@ -1,8 +1,20 @@
-import bw_rgtan_model
+import argparse
+import time
+
+import pandas as pd
+import torch
+import torch.nn.functional as F
+import numpy as np
+from dgl.dataloading import MultiLayerFullNeighborSampler, DataLoader
+from sklearn.model_selection import train_test_split
+
+from bw_rgtan_model import bw_rgtan_model
+from models.bwgnn.bwgnn_dataset import Dataset
+from models.bwgnn.bwgnn_models import BWGNN, BWGNN_Hetero
 
 
-def train(graph, args):
-    device = args.['device']
+def train(graph, args, cat_features, neigh_features):
+    device = args.device
     graph = graph.to(device)
 
     feature = graph.ndata['feature']
@@ -27,12 +39,21 @@ def train(graph, args):
     test_mask[idx_test] = 1
 
 
-    sampler = dgl.dataloading.MultiLayerFullNeighborSampler(2)  # 2 layers for GNN
-    dataloader = DataLoader(g, torch.where(train_mask)[0].tolist(), sampler, device=device, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    sampler = MultiLayerFullNeighborSampler(2)  # 2 layers for GNN
+    dataloader = DataLoader(graph, torch.where(train_mask)[0].tolist(), sampler, device=device, batch_size=args.batch_size, shuffle=True, num_workers=0)
 
+    # cat_features = args['cat_feat']
+    cat_feat = {col: torch.from_numpy(feature[col].values).long().to(
+        device) for col in cat_features}
+    # neigh_features = args['neigh_feat']
+    nei_feat = None
+    if isinstance(neigh_features, pd.DataFrame):  # otherwise []
+        # if null it is []
+        nei_feat = {col: torch.from_numpy(neigh_features[col].values).to(torch.float32).to(
+            device) for col in neigh_features.columns}
+    nei_att_head = args.nei_att_heads
 
-
-    model = bw_rgtan_model(in_feats=in_feats, hidden_dim=h_feats, num_classes=num_classes, heads=[4]*args['n_layers'], activation=nn.PReLU(), graph=graph, d=order, batch=True,  n_layers=args['n_layers'], drop=args['dropout'], device=device, gated=args['gated'], ref_df=feat_df, cat_features=cat_feat, neigh_features=nei_feat, nei_att_head=nei_att_head).to(device)
+    # model = bw_rgtan_model(in_feats=in_feats, hidden_dim=h_feats, n_classes=num_classes, heads=[4]*args.n_layers, activation=torch.nn.PReLU(), graph=graph, h_feats=h_feats, d=order, batch=True,  n_layers=args.n_layers, drop=args.dropout, device=device, gated=args.gated, ref_df=feature[idx_train], cat_features=cat_feat, neigh_features=nei_feat, nei_att_head=nei_att_head).to(device)
 
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
@@ -78,6 +99,11 @@ if __name__ == '__main__':
     parser.add_argument("--epoch", type=int, default=100, help="The max number of epochs")
     parser.add_argument("--run", type=int, default=5, help="Running times")
     parser.add_argument("--batch_size", type=int, default=64, help="Mini-batch size")
+    parser.add_argument("--device", type=str, default='cpu', help="cuda")
+    parser.add_argument("--nei_att_heads", type=int, default=5, help="")
+    parser.add_argument("--n_layers", type=int, default=2, help="")
+    parser.add_argument("--dropout", type=list, default=[0.2, 0.1], help="")
+    parser.add_argument("--gated", type=bool, default=True, help="")
 
     args = parser.parse_args()
     print(args)
@@ -85,25 +111,22 @@ if __name__ == '__main__':
     homo = args.homo
     order = args.order
     h_feats = args.hid_dim
-    graph = Dataset(dataset_name, homo).graph
+    graph = Dataset(dataset_name, homo, sample=False).graph
     in_feats = graph.ndata['feature'].shape[1]
     num_classes = 2
+    # args['cat_feat'] = graph.ndata['cat_feat']
+    # args['neigh_feat'] = graph.ndata['neigh_feat']
+    cat_feat = []
+    neigh_feat = []
 
 
 
     if args.run == 1:
-        train(graph, args)
-
-
-
+        train(graph, args, cat_feat, neigh_feat)
     else:
         final_mf1s, final_aucs = [], []
         for tt in range(args.run):
-            if homo:
-                model = BWGNN(in_feats, h_feats, num_classes, graph, d=order)
-            else:
-                model = BWGNN_Hetero(in_feats, h_feats, num_classes, graph, d=order)
-            mf1, auc = train(model, graph, args)
+            mf1, auc = train(graph, args, cat_feat, neigh_feat)
             final_mf1s.append(mf1)
             final_aucs.append(auc)
 

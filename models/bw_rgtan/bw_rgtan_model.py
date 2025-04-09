@@ -1,28 +1,24 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from dgl.utils import expand_as_pair
+from dgl import function as fn
+from dgl.base import DGLError
+from dgl.nn.functional import edge_softmax
+import numpy as np
+import pandas as pd
+from math import sqrt
+
+from models.bwgnn.bwgnn_models import calculate_theta2, PolyConv, PolyConvBatch
+from models.rgtan.rgtan_model import TransEmbedding, TransformerConv
 
 
 class bw_rgtan_model(nn.Module):
-    def __init__(self,
-                 in_feats,
-                 hidden_dim,
-                 n_layers,
-                 n_classes,
-                 heads,
-                 activation,
-                 graph,
-                 d=2,
-                 batch=True,
-                 skip_feat=True,
-                 gated=True,
-                 layer_norm=True,
-                 post_proc=True,
-                 n2v_feat=True,
-                 drop=None,
-                 ref_df=None,
-                 cat_features=None,
-                 neigh_features=None,
-                 nei_att_head=4,
-                 device='cpu',):
+    def __init__(self, in_feats, hidden_dim, n_layers, n_classes, heads, activation, graph, h_feats, d=2, batch=True,
+                 skip_feat=True, gated=True, layer_norm=True, post_proc=True, n2v_feat=True, drop=None, ref_df=None,
+                 cat_features=None, neigh_features=None, nei_att_head=4, device='cpu', *args, **kwargs):
         # rgtan initialization
+        super().__init__(*args, **kwargs)
         self.in_feats = in_feats  # feature dimension
         self.hidden_dim = hidden_dim  # 64
         self.n_layers = n_layers
@@ -83,7 +79,7 @@ class bw_rgtan_model(nn.Module):
                                              nn.Linear(self.hidden_dim * self.heads[-1], self.hidden_dim)))
         else:
             self.layers.append(nn.Linear(self.hidden_dim *
-                               self.heads[-1], self.n_classes))
+                               self.heads[-1], self.hidden_dim))
 
 
         # bwgnn inizialization
@@ -103,9 +99,9 @@ class bw_rgtan_model(nn.Module):
         self.d = d
 
         # aggeragation initialization
-        self.agg_layer = nn.Linear(self.hidden_dim, num_class)
+        self.agg_layer = nn.Linear(self.hidden_dim, n_classes)
 
-    def forward():
+    def forward(self, blocks, features, labels, n2v_feat=None, neighstat_feat=None):
         # rgtan
         if n2v_feat is None and neighstat_feat is None:
             h = features
@@ -132,7 +128,7 @@ class bw_rgtan_model(nn.Module):
 
 
         # bwgnn
-        h = self.linear(in_feat)
+        h = self.linear(features)
         h = self.act(h)
         h = self.linear2(h)
         h = self.act(h)
@@ -140,7 +136,7 @@ class bw_rgtan_model(nn.Module):
 
         for relation in self.g.canonical_etypes:
             # print(relation)
-            h_final = torch.zeros([len(in_feat), 0])
+            h_final = torch.zeros([len(features), 0])
             for conv in self.conv:
                 h0 = conv(self.g[relation], h)
                 h_final = torch.cat([h_final, h0], -1)

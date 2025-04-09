@@ -64,6 +64,8 @@ class Dataset:
                 sample_num = 1000
                 graph = amazon_graph(True, sample_num, sample_num*200, 0, 1, 0.5, True)
                 # graph = amazon_graph_random_drop_v3(True, 1000, 0, 0, None, True)
+            # graph.ndata['cat_feat'] = []
+            # graph.ndata['neigh_feat'] = []
         elif name == 'amazon_knn':
             graphs, label_dict = dgl.load_graphs('./dataset/amazon/edknn_graph.dgl')
             graph = graphs[0]

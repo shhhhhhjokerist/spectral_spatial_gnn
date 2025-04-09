@@ -142,14 +142,14 @@ if __name__ == '__main__':
     num_classes = 2
 
     if args.run == 1:
-        model = BWGNN(in_feats, h_feats, num_classes, graph, d=order) if homo else BWGNN_Hetero(in_feats, h_feats,
+        model = BWGNN(in_feats, h_feats, num_classes, graph, batch=True, d=order) if homo else BWGNN_Hetero(in_feats, h_feats,
                                                                                                 num_classes, graph,
                                                                                                 d=order)
         train(model, graph, args)
     else:
         final_mf1s, final_aucs = [], []
         for _ in range(args.run):
-            model = BWGNN(in_feats, h_feats, num_classes, graph, d=order) if homo else BWGNN_Hetero(in_feats, h_feats,
+            model = BWGNN(in_feats, h_feats, num_classes, graph, batch=True, d=order) if homo else BWGNN_Hetero(in_feats, h_feats,
                                                                                                     num_classes, graph,
                                                                                                     d=order)
             mf1, auc = train(model, graph, args)

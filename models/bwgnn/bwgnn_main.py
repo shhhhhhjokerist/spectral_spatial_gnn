@@ -51,7 +51,8 @@ def train(model, g, args):
 
         for input_nodes, output_nodes, mfg in dataloader:
             # Prepare input features and labels for the mini-batch
-            batch_features = mfg.ndata['feature']
+            # batch_features = mfg.ndata['feature']
+            batch_features = features[input_nodes]
             batch_labels = labels[output_nodes]
 
             optimizer.zero_grad()
@@ -126,7 +127,7 @@ if __name__ == '__main__':
     homo = args.homo
     order = args.order
     h_feats = args.hid_dim
-    graph = Dataset(dataset_name, homo).graph
+    graph = Dataset(dataset_name, homo, sample=False).graph
     in_feats = graph.ndata['feature'].shape[1]
     num_classes = 2
 
