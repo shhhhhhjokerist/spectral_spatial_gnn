@@ -25,12 +25,12 @@ def load_lpa_subtensor(
     :param blocks: dgl blocks
     """
     # masking to avoid label leakage
-    if "1hop_riskstat" in neigh_feat.keys() and len(blocks) >= 2:
+    if neigh_feat and "1hop_riskstat" in neigh_feat.keys() and len(blocks) >= 2:
         # nei_hop1 = get_k_neighs(graph, seeds, 1)
         nei_hop1 = blocks[-2].dstdata['_ID']
         neigh_feat['1hop_riskstat'][nei_hop1] = 0
 
-    if "2hop_riskstat" in neigh_feat.keys() and len(blocks) >= 3:
+    if neigh_feat and "2hop_riskstat" in neigh_feat.keys() and len(blocks) >= 3:
         # nei_hop2 = get_k_neighs(graph, seeds, 2)
         nei_hop2 = blocks[-3].dstdata['_ID']
         neigh_feat['2hop_riskstat'][nei_hop2] = 0
